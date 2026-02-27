@@ -1,0 +1,320 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String   @unique
+  password      String
+  contactNumber String   @unique
+  address       String
+  country       String
+
+  role          String   @default("USER")
+  isVerified    Boolean  @default(false)
+
+  verificationTokens VerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+
+
+  cartItems     CartItem[] // user cart items
+  cart Cart? // one user has one cart
+
+
+  payments Payment[] // one user can have many payments
+  orders Order[]
+
+  refundRequests RefundRequest[]
+  
+  reviews Review[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  isActive  Boolean   @default(true)
+
+  products  Product[] // one category → many products
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  price       Float
+
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+
+  categoryId  Int
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  variants    ProductVariant[] // one product → many variants
+  reviews Review[]
+
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+
+model ProductVariant {
+  id        Int      @id @default(autoincrement())
+  size      String
+  color     String
+  imageUrl  String?
+  stock     Int
+  
+
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+
+  cartItems CartItem[] // variant used in cart
+
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+
+model CartItem {
+  id         Int      @id @default(autoincrement())
+  quantity   Int
+
+  cartId     Int
+  cart       Cart     @relation(fields: [cartId], references: [id])
+
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+
+
+  variantId  Int
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+
+
+
+model Cart {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  user           User     @relation(fields: [userId], references: [id])
+
+  couponCode     String?
+  discountAmount Float    @default(0)
+  totalAmount    Float    @default(0)
+  payableAmount  Float    @default(0) // final amount after discount
+
+  items          CartItem[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+
+
+
+model Order {
+  id            Int      @id @default(autoincrement())
+
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id])
+
+  name          String   // snapshot from profile
+  email         String
+  contactNumber String
+  address       String
+  country       String
+
+  paymentMethod String   // COD | ONLINE
+  paymentStatus String   @default("PENDING") // PENDING | PAID
+
+  status        String   @default("PENDING")
+  // PENDING | ACCEPTED | PROCESSING | SHIPPING | DELIVERED | CANCELLED
+
+  totalAmount   Float
+  discountAmount Float   @default(0) // coupon discount
+  couponCode     String?              // applied coupon code
+  payableAmount  Float
+
+  orderItems    OrderItem[]
+
+  refundRequest RefundRequest?
+
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id])
+
+  variantId Int
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+
+  quantity  Int
+  price     Float    // price snapshot
+
+  createdAt DateTime @default(now())
+}
+
+
+
+model VerificationToken {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  user           User     @relation(fields: [userId], references: [id])
+
+  otp            String
+  token          String   @unique
+  expiresAt      DateTime
+
+  attempts       Int      @default(0)
+
+  resendCount    Int      @default(1)   // how many times OTP sent today
+  nextResendAt   DateTime               // when resend allowed again
+  resendDay      DateTime               // date tracker for daily reset
+
+  createdAt      DateTime @default(now())
+}
+
+
+
+model Coupon {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique
+  discountType    String   // PERCENT | FLAT
+  discountValue   Float
+
+  maxDiscount     Float?   // optional cap
+  minOrderAmount  Float?   // optional min cart value
+
+  isActive        Boolean  @default(true)
+  expiresAt       DateTime
+
+  totalUsageLimit Int?     // max global usage
+  usedCount       Int      @default(0)
+
+  isStackable     Boolean  @default(false)
+
+  conditions      CouponCondition[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+
+model CouponCondition {
+  id          Int     @id @default(autoincrement())
+  couponId    Int
+  coupon      Coupon  @relation(fields: [couponId], references: [id])
+
+  type        String  // CATEGORY | PRODUCT | USER | FIRST_ORDER
+  operator    String  // IN | NOT_IN | EQUAL
+  value       String  // JSON string (ids / values)
+}
+
+
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id])
+
+  amount        Float
+  currency      String   @default("BDT")
+  provider      String   // STRIPE / BKASH / SSLCOMMERZ
+  status        String   // PENDING / PAID / FAILED
+
+  transactionId String?  // gateway reference
+  orderId       Int?     // linked after success
+
+  createdAt     DateTime @default(now())
+}
+
+
+
+model RefundRequest {
+  id         Int      @id @default(autoincrement())
+
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+
+  orderId    Int      @unique
+  order      Order    @relation(fields: [orderId], references: [id])
+
+  reason     String
+  message    String?
+
+  imageUrl   String   // damage proof image (required)
+
+  status     String   @default("REQUESTED")
+  // REQUESTED | APPROVED | REJECTED | REFUNDED
+
+  adminNote  String?
+
+  createdAt  DateTime @default(now())
+}
+
+
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+
+  otp       String          // 6 digit OTP
+  token     String   @unique // reset link token
+
+  expiresAt DateTime        // expiry time
+  used      Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+
+
+model Review {
+  id        Int      @id @default(autoincrement())
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+
+  rating    Int      // 1 to 5
+  comment   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId]) // one review per user per product
+}
